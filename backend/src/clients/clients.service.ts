@@ -1,13 +1,23 @@
+import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import type { AuthenticatedUser } from '../common/authenticated-request.js';
+import { normalizeEmail, normalizePhone } from '../common/contact.js';
 import { buildPage, type PageParams } from '../common/pagination.js';
 
 const MAX_SEARCH_LENGTH = 200;
+const CONTACT_LOCK_TIMEOUT_SECONDS = 5;
+
+export type ClientContact = {
+  fullName: string;
+  email: string | null;
+  phone: string | null;
+};
 
 type ClientRow = {
   id: number;
@@ -171,5 +181,111 @@ export class ClientsService {
         leadCount: leads.length,
       },
     };
+  }
+
+  /**
+   * Runs `work` in a transaction with the client for this contact found or
+   * created. Concurrent calls for the same email (or phone, when there is no
+   * email) are serialized with a named lock held until after commit, so two
+   * agents adding the same new customer at once cannot create two clients.
+   *
+   * Matching rules:
+   *   - email given: match on email only
+   *   - no email, phone given: match on normalized phone
+   *   - neither: always a new client (nothing to match on)
+   */
+  async runInClientTransaction<T>(
+    contact: ClientContact,
+    work: (manager: EntityManager, clientId: number) => Promise<T>,
+  ): Promise<T> {
+    const email = normalizeEmail(contact.email);
+    const phoneNormalized = normalizePhone(contact.phone);
+    const lockKey = email
+      ? `email:${email}`
+      : phoneNormalized
+        ? `phone:${phoneNormalized}`
+        : null;
+    const lockName = lockKey
+      ? `crm:client:${createHash('sha1').update(lockKey).digest('hex')}`
+      : null;
+
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
+
+    let locked = false;
+
+    try {
+      if (lockName) {
+        const lockRows = (await runner.query('SELECT GET_LOCK(?, ?) AS got', [
+          lockName,
+          CONTACT_LOCK_TIMEOUT_SECONDS,
+        ])) as Array<{ got: number | string | null }>;
+
+        if (Number(lockRows[0]?.got) !== 1) {
+          throw new ServiceUnavailableException(
+            'The system is busy. Please try again.',
+          );
+        }
+
+        locked = true;
+      }
+
+      await runner.startTransaction();
+
+      try {
+        const clientId = await this.findOrCreate(runner.manager, {
+          fullName: contact.fullName,
+          email,
+          phone: contact.phone,
+        });
+
+        const result = await work(runner.manager, clientId);
+        await runner.commitTransaction();
+        return result;
+      } catch (error) {
+        if (runner.isTransactionActive) {
+          await runner.rollbackTransaction();
+        }
+        throw error;
+      }
+    } finally {
+      if (locked && lockName) {
+        await runner.query('SELECT RELEASE_LOCK(?)', [lockName]);
+      }
+      await runner.release();
+    }
+  }
+
+  private async findOrCreate(
+    manager: EntityManager,
+    contact: ClientContact,
+  ): Promise<number> {
+    const phoneNormalized = normalizePhone(contact.phone);
+
+    let matches: Array<{ id: number | string }> = [];
+
+    if (contact.email) {
+      matches = (await manager.query(
+        `SELECT id FROM clients WHERE email = ? ORDER BY id LIMIT 1`,
+        [contact.email],
+      )) as Array<{ id: number | string }>;
+    } else if (phoneNormalized) {
+      matches = (await manager.query(
+        `SELECT id FROM clients WHERE phone_normalized = ? ORDER BY id LIMIT 1`,
+        [phoneNormalized],
+      )) as Array<{ id: number | string }>;
+    }
+
+    if (matches.length) {
+      return Number(matches[0].id);
+    }
+
+    const insert = (await manager.query(
+      `INSERT INTO clients (full_name, email, phone, phone_normalized)
+       VALUES (?, ?, ?, ?)`,
+      [contact.fullName, contact.email, contact.phone, phoneNormalized],
+    )) as { insertId: number | string };
+
+    return Number(insert.insertId);
   }
 }

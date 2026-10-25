@@ -9,6 +9,7 @@ import { ClientsService } from './clients/clients.service.js';
 import type { AuthenticatedUser } from './common/authenticated-request.js';
 import { LeadsController } from './leads/leads.controller.js';
 import { LeadsService } from './leads/leads.service.js';
+import type { EntityManager } from 'typeorm';
 
 /**
  * Exercises real routing, validation and SQL parameter order with the
@@ -16,6 +17,8 @@ import { LeadsService } from './leads/leads.service.js';
  */
 describe('HTTP routes (mocked database)', () => {
   let app: INestApplication;
+  let clientsService: ClientsService;
+  let runInClientTransaction: ReturnType<typeof vi.spyOn>;
   let currentUser: AuthenticatedUser;
   const query = vi.fn();
 
@@ -42,6 +45,7 @@ describe('HTTP routes (mocked database)', () => {
 
     app = moduleRef.createNestApplication();
     await app.init();
+    clientsService = app.get(ClientsService);
   });
 
   afterAll(async () => {
@@ -51,6 +55,14 @@ describe('HTTP routes (mocked database)', () => {
   beforeEach(() => {
     query.mockReset();
     currentUser = agent;
+
+    // Client find-or-create needs a real transaction; the real-database e2e
+    // suite covers it. Here it just hands the work a client id and the mock.
+    runInClientTransaction = vi
+      .spyOn(clientsService, 'runInClientTransaction')
+      .mockImplementation(async (_contact, work) =>
+        work({ query } as unknown as EntityManager, 3),
+      );
   });
 
   it('GET /leads/count is not swallowed by an :id route', async () => {
@@ -93,7 +105,7 @@ describe('HTTP routes (mocked database)', () => {
       .expect(403);
   });
 
-  it('POST /leads creates a lead assigned to the agent', async () => {
+  it('POST /leads creates a lead assigned to the agent, linked to a client', async () => {
     query
       .mockResolvedValueOnce({ insertId: 55 })
       .mockResolvedValueOnce([{ id: 55, customerName: 'Ana' }]);
@@ -102,7 +114,104 @@ describe('HTTP routes (mocked database)', () => {
       .send({ customerName: 'Ana', customerEmail: 'ANA@x.com' });
     expect(res.status).toBe(201);
     expect(res.body.data.id).toBe(55);
-    expect(query.mock.calls[0][1]).toEqual(['7', 'Ana', 'ana@x.com', null, null]);
+    expect(query.mock.calls[0][0]).toContain('NOW()'); // assigned_at set
+    expect(query.mock.calls[0][1]).toEqual(['7', 3, 'Ana', 'ana@x.com', null, null]);
+    expect(runInClientTransaction).toHaveBeenCalledWith(
+      { fullName: 'Ana', email: 'ana@x.com', phone: null },
+      expect.any(Function),
+    );
+  });
+
+  it('POST /leads by an admin with no agent puts the lead in the pool', async () => {
+    currentUser = admin;
+    query
+      .mockResolvedValueOnce({ insertId: 56 })
+      .mockResolvedValueOnce([{ id: 56 }]);
+    await request(app.getHttpServer())
+      .post('/leads')
+      .send({ customerName: 'Pool Person' })
+      .expect(201);
+    expect(query.mock.calls[0][0]).not.toContain('NOW()'); // no assigned_at
+    expect(query.mock.calls[0][1][0]).toBeNull();
+  });
+
+  it('GET /leads/pool is open to agents and is not scoped to them', async () => {
+    query.mockResolvedValueOnce([{ total: '2' }]).mockResolvedValueOnce([]);
+    const res = await request(app.getHttpServer()).get('/leads/pool');
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(2);
+    expect(query.mock.calls[1][0]).toContain('assigned_agent_id IS NULL');
+    expect(query.mock.calls[1][0]).not.toContain('customer_email');
+    expect(query.mock.calls[1][1]).toEqual([10, 0]);
+  });
+
+  it('POST /leads/:id/claim succeeds when the update changes a row', async () => {
+    query
+      .mockResolvedValueOnce({ affectedRows: 1 })
+      .mockResolvedValueOnce([{ id: 5, assignedAgentId: 7 }]);
+    const res = await request(app.getHttpServer()).post('/leads/5/claim');
+    expect(res.status).toBe(201);
+    expect(query.mock.calls[0][0]).toContain('assigned_agent_id IS NULL');
+    expect(query.mock.calls[0][1]).toEqual(['7', '5']);
+  });
+
+  it('POST /leads/:id/claim is 409 if already claimed, 404 if missing', async () => {
+    query
+      .mockResolvedValueOnce({ affectedRows: 0 })
+      .mockResolvedValueOnce([{ id: 5 }]);
+    await request(app.getHttpServer()).post('/leads/5/claim').expect(409);
+
+    query
+      .mockResolvedValueOnce({ affectedRows: 0 })
+      .mockResolvedValueOnce([]);
+    await request(app.getHttpServer()).post('/leads/6/claim').expect(404);
+
+    await request(app.getHttpServer()).post('/leads/abc/claim').expect(400);
+  });
+
+  it('release, reassign and stale are admin-only', async () => {
+    const server = app.getHttpServer();
+    await request(server).post('/leads/5/release').expect(403);
+    await request(server).post('/leads/5/reassign').send({ agentId: 8 }).expect(403);
+    await request(server).get('/leads/stale').expect(403);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('admin release: 201, then 409 when already in the pool', async () => {
+    currentUser = admin;
+    query
+      .mockResolvedValueOnce({ affectedRows: 1 })
+      .mockResolvedValueOnce([{ id: 5, assignedAgentId: null }]);
+    await request(app.getHttpServer()).post('/leads/5/release').expect(201);
+
+    query
+      .mockResolvedValueOnce({ affectedRows: 0 })
+      .mockResolvedValueOnce([{ id: 5 }]);
+    await request(app.getHttpServer()).post('/leads/5/release').expect(409);
+  });
+
+  it('admin reassign validates the agent id and the agent', async () => {
+    currentUser = admin;
+    await request(app.getHttpServer())
+      .post('/leads/5/reassign')
+      .send({ agentId: 'x' })
+      .expect(400);
+
+    query.mockResolvedValueOnce([{ id: 5 }]).mockResolvedValueOnce([]); // lead ok, agent not active
+    await request(app.getHttpServer())
+      .post('/leads/5/reassign')
+      .send({ agentId: 8 })
+      .expect(400);
+  });
+
+  it('GET /leads/stale validates hours and passes them to the query', async () => {
+    currentUser = admin;
+    await request(app.getHttpServer()).get('/leads/stale?hours=0').expect(400);
+
+    query.mockResolvedValueOnce([{ total: '0' }]).mockResolvedValueOnce([]);
+    await request(app.getHttpServer()).get('/leads/stale?hours=48').expect(200);
+    expect(query.mock.calls[0][1]).toEqual([48]);
+    expect(query.mock.calls[1][1]).toEqual([48, 10, 0]);
   });
 
   it('PATCH /leads/:id rejects an invalid status', async () => {

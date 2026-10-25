@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import CreateLeadForm from "./CreateLeadForm";
+import LeadPool from "./LeadPool";
 
 const navigation = [
   { label: "Dashboard", icon: "D", active: true },
   { label: "Leads", icon: "L", active: false },
+  { label: "Lead Pool", icon: "P", active: false },
   { label: "Flight Requests", icon: "F", active: false },
   { label: "Quotes", icon: "Q", active: false },
   { label: "Customers", icon: "C", active: false },
@@ -470,6 +472,16 @@ export default function CrmDashboard({
               </article>
             ))}
           </div>
+        )}
+
+        {activeSection === "Lead Pool" && (
+          <LeadPool
+            accessToken={accessToken}
+            onClaimed={() => {
+              setCurrentPage(1);
+              setLeadsRefreshKey((key) => key + 1);
+            }}
+          />
         )}
 
         {activeSection === "Leads" && (
