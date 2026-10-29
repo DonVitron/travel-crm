@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import CreateLeadForm from "./CreateLeadForm";
 import LeadPool from "./LeadPool";
 
@@ -92,6 +93,9 @@ export default function CrmDashboard({
   accessToken,
   onLogout,
 }: CrmDashboardProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+
   const [leads, setLeads] = useState<Lead[]>([]);
   
   const [clients, setClients] = useState<Client[]>([]);
@@ -106,6 +110,15 @@ export default function CrmDashboard({
   const [clientDetailsLoading, setClientDetailsLoading] = useState(false);
   const [clientDetailsError, setClientDetailsError] = useState("");
   const [activeSection, setActiveSection] = useState("Dashboard");
+
+  useEffect(() => {
+    if (pathname === "/leads") {
+      setActiveSection("Leads");
+    } else {
+      setActiveSection("Dashboard");
+    }
+  }, [pathname]);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
@@ -398,7 +411,15 @@ export default function CrmDashboard({
             <button
               key={item.label}
               type="button"
-              onClick={() => setActiveSection(item.label)}
+              onClick={() => {
+                setActiveSection(item.label);
+
+                if (item.label === "Leads") {
+                  router.push("/leads");
+                } else if (pathname === "/leads") {
+                  router.push("/");
+                }
+              }}
               aria-current={activeSection === item.label ? "page" : undefined}
               className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium ${
                 activeSection === item.label
