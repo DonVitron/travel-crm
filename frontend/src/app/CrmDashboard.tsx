@@ -14,6 +14,15 @@ const navigation = [
   { label: "Customers", icon: "C", active: false },
 ];
 
+const sectionRoutes: Record<string, string> = {
+  Dashboard: "/",
+  Leads: "/leads",
+  "Lead Pool": "/lead-pool",
+  "Flight Requests": "/flight-requests",
+  Quotes: "/quotes",
+  Customers: "/customers",
+};
+
 const stats = [
   { label: "Total Leads", value: "128", note: "Sample overview" },
   { label: "Pending Requests", value: "12", note: "Sample overview" },
@@ -113,11 +122,17 @@ export default function CrmDashboard({
     initialSection ?? "Dashboard"
   );
 
-  useEffect(() => {
-    if (pathname === "/leads") {
-      setActiveSection("Leads");
-    }
-  }, [pathname]);
+
+useEffect(() => {
+  const section = Object.entries(sectionRoutes).find(
+    ([, route]) => route === pathname
+  )?.[0];
+
+  if (section) {
+    setActiveSection(section);
+  }
+}, [pathname]);
+
 
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -404,12 +419,10 @@ export default function CrmDashboard({
               key={item.label}
               type="button"
               onClick={() => {
-                setActiveSection(item.label);
+                const route = sectionRoutes[item.label];
 
-                if (item.label === "Leads") {
-                  router.push("/leads");
-                } else if (pathname === "/leads") {
-                  router.push("/");
+                if (route) {
+                  router.push(route);
                 }
               }}
               aria-current={activeSection === item.label ? "page" : undefined}
