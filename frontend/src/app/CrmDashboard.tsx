@@ -40,7 +40,6 @@ type LeadsResponse = {
   totalPages: number;
 };
 
-
 type Client = {
   id: number;
   fullName: string;
@@ -81,23 +80,24 @@ type ClientDetailsResponse = {
   };
 };
 
-
 const API_URL = "http://localhost:3001";
 
 type CrmDashboardProps = {
   accessToken: string;
   onLogout: () => void;
+  initialSection?: string;
 };
 
 export default function CrmDashboard({
   accessToken,
   onLogout,
+  initialSection,
 }: CrmDashboardProps) {
   const pathname = usePathname();
   const router = useRouter();
 
   const [leads, setLeads] = useState<Lead[]>([]);
-  
+
   const [clients, setClients] = useState<Client[]>([]);
   const [clientsPage, setClientsPage] = useState(1);
   const [clientsTotalPages, setClientsTotalPages] = useState(0);
@@ -109,13 +109,13 @@ export default function CrmDashboard({
     useState<ClientDetailsResponse["data"] | null>(null);
   const [clientDetailsLoading, setClientDetailsLoading] = useState(false);
   const [clientDetailsError, setClientDetailsError] = useState("");
-  const [activeSection, setActiveSection] = useState("Dashboard");
+  const [activeSection, setActiveSection] = useState(
+    initialSection ?? "Dashboard"
+  );
 
   useEffect(() => {
     if (pathname === "/leads") {
       setActiveSection("Leads");
-    } else {
-      setActiveSection("Dashboard");
     }
   }, [pathname]);
 
@@ -140,10 +140,7 @@ export default function CrmDashboard({
   const [statusUpdateMessage, setStatusUpdateMessage] = useState("");
   const [statusUpdateError, setStatusUpdateError] = useState(false);
 
-  async function updateLeadStatus(
-    leadId: number,
-    status: Lead["status"],
-  ) {
+  async function updateLeadStatus(leadId: number, status: Lead["status"]) {
     setUpdatingLeadId(leadId);
     setStatusUpdateMessage("");
     setStatusUpdateError(false);
@@ -167,7 +164,7 @@ export default function CrmDashboard({
     } catch {
       setStatusUpdateError(true);
       setStatusUpdateMessage(
-        `Couldn't update lead #${leadId}. Please try again.`,
+        `Couldn't update lead #${leadId}. Please try again.`
       );
     } finally {
       setUpdatingLeadId(null);
@@ -196,7 +193,7 @@ export default function CrmDashboard({
             customerPhone: editCustomerPhone || null,
             notes: editNotes || null,
           }),
-        },
+        }
       );
 
       if (!response.ok) {
@@ -212,7 +209,7 @@ export default function CrmDashboard({
       setEditMessage(
         error instanceof Error
           ? error.message
-          : "Could not save lead details. Please try again.",
+          : "Could not save lead details. Please try again."
       );
     } finally {
       setSavingLead(false);
@@ -242,7 +239,7 @@ export default function CrmDashboard({
       setClientDetailsError(
         error instanceof Error
           ? error.message
-          : "Could not load client details.",
+          : "Could not load client details."
       );
     } finally {
       setClientDetailsLoading(false);
@@ -356,7 +353,7 @@ export default function CrmDashboard({
             },
             signal: controller.signal,
             cache: "no-store",
-          },
+          }
         );
 
         if (!response.ok) {
@@ -373,7 +370,7 @@ export default function CrmDashboard({
           setClientsError(
             error instanceof Error
               ? error.message
-              : "Could not load clients.",
+              : "Could not load clients."
           );
         }
       } finally {
@@ -386,12 +383,7 @@ export default function CrmDashboard({
     void loadClients();
 
     return () => controller.abort();
-  }, [
-    activeSection,
-    accessToken,
-    clientsPage,
-    clientsSearch,
-  ]);
+  }, [activeSection, accessToken, clientsPage, clientsSearch]);
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 md:flex">
@@ -479,8 +471,8 @@ export default function CrmDashboard({
                     ? totalLeadsError
                       ? "Unavailable"
                       : totalLeads === null
-                        ? "…"
-                        : totalLeads
+                      ? "…"
+                      : totalLeads
                     : stat.value}
                 </p>
                 <p className="mt-2 text-xs text-slate-400">
@@ -532,7 +524,9 @@ export default function CrmDashboard({
                       void saveLeadDetails();
                     }}
                   >
-                    <h4 className="font-semibold">Edit lead #{editingLead.id}</h4>
+                    <h4 className="font-semibold">
+                      Edit lead #{editingLead.id}
+                    </h4>
 
                     <label className="block text-sm font-medium">
                       Customer name
@@ -540,7 +534,9 @@ export default function CrmDashboard({
                         required
                         maxLength={160}
                         value={editCustomerName}
-                        onChange={(event) => setEditCustomerName(event.target.value)}
+                        onChange={(event) =>
+                          setEditCustomerName(event.target.value)
+                        }
                         className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
                       />
                     </label>
@@ -551,7 +547,9 @@ export default function CrmDashboard({
                         type="email"
                         maxLength={254}
                         value={editCustomerEmail}
-                        onChange={(event) => setEditCustomerEmail(event.target.value)}
+                        onChange={(event) =>
+                          setEditCustomerEmail(event.target.value)
+                        }
                         className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
                       />
                     </label>
@@ -562,7 +560,9 @@ export default function CrmDashboard({
                         type="tel"
                         maxLength={40}
                         value={editCustomerPhone}
-                        onChange={(event) => setEditCustomerPhone(event.target.value)}
+                        onChange={(event) =>
+                          setEditCustomerPhone(event.target.value)
+                        }
                         className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
                       />
                     </label>
@@ -581,7 +581,9 @@ export default function CrmDashboard({
                     {editMessage && (
                       <p
                         role={editError ? "alert" : "status"}
-                        className={`text-sm ${editError ? "text-red-600" : "text-green-700"}`}
+                        className={`text-sm ${
+                          editError ? "text-red-600" : "text-green-700"
+                        }`}
                       >
                         {editMessage}
                       </p>
@@ -612,10 +614,14 @@ export default function CrmDashboard({
                   </form>
                 )}
                 <span className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700">
-                  {leadsLoading ? "Loading" : leadsError ? "Unavailable" : `${filteredLeads.length} leads`}
+                  {leadsLoading
+                    ? "Loading"
+                    : leadsError
+                    ? "Unavailable"
+                    : `${filteredLeads.length} leads`}
                 </span>
               </div>
-              
+
               {statusUpdateMessage && (
                 <p
                   role={statusUpdateError ? "alert" : "status"}
@@ -659,8 +665,12 @@ export default function CrmDashboard({
                     Loading leads…
                   </p>
                 ) : leadsError ? (
-                  <p role="alert" className="py-8 text-center text-sm text-red-600">
-                    Couldn't load leads. Check that the backend is running and try refreshing.
+                  <p
+                    role="alert"
+                    className="py-8 text-center text-sm text-red-600"
+                  >
+                    Couldn't load leads. Check that the backend is running and
+                    try refreshing.
                   </p>
                 ) : filteredLeads.length === 0 ? (
                   <p className="py-8 text-center text-sm text-slate-500">
@@ -680,16 +690,24 @@ export default function CrmDashboard({
                     </thead>
                     <tbody>
                       {filteredLeads.map((lead) => (
-                        <tr key={lead.id} className="border-b border-slate-100 last:border-0">
-                          <td className="py-4 pr-4 font-medium">{lead.customerName}</td>
-                          <td className="py-4 pr-4 text-slate-500">{lead.id}</td>
+                        <tr
+                          key={lead.id}
+                          className="border-b border-slate-100 last:border-0"
+                        >
+                          <td className="py-4 pr-4 font-medium">
+                            {lead.customerName}
+                          </td>
+                          <td className="py-4 pr-4 text-slate-500">
+                            {lead.id}
+                          </td>
                           <td className="py-4">
                             <select
                               aria-label={`Status for lead ${lead.id}`}
                               value={lead.status}
                               disabled={updatingLeadId === lead.id}
                               onChange={(event) => {
-                                const nextStatus = event.target.value as Lead["status"];
+                                const nextStatus = event.target
+                                  .value as Lead["status"];
                                 void updateLeadStatus(lead.id, nextStatus);
                               }}
                               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm capitalize disabled:opacity-50"
@@ -745,12 +763,8 @@ export default function CrmDashboard({
 
                   <button
                     type="button"
-                    disabled={
-                      currentPage >= totalPages || leadsLoading
-                    }
-                    onClick={() =>
-                      setCurrentPage((page) => page + 1)
-                    }
+                    disabled={currentPage >= totalPages || leadsLoading}
+                    onClick={() => setCurrentPage((page) => page + 1)}
                     className="rounded-lg border border-slate-200 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Next
@@ -847,7 +861,8 @@ export default function CrmDashboard({
                           >
                             <td className="py-3 pr-4">#{lead.id}</td>
                             <td className="py-3 pr-4">
-                              {lead.originCode || "—"} → {lead.destinationCode || "—"}
+                              {lead.originCode || "—"} →{" "}
+                              {lead.destinationCode || "—"}
                             </td>
                             <td className="py-3 pr-4">
                               {lead.cabinClass?.replaceAll("_", " ") || "—"}
@@ -902,7 +917,8 @@ export default function CrmDashboard({
                 {!clientsLoading && !clientsError && (
                   <>
                     <p className="mt-4 text-sm text-slate-500">
-                      {clientsTotal} customer{clientsTotal === 1 ? "" : "s"} found
+                      {clientsTotal} customer{clientsTotal === 1 ? "" : "s"}{" "}
+                      found
                     </p>
 
                     <div className="mt-3 overflow-x-auto">

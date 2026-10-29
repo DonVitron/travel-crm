@@ -1,10 +1,49 @@
+
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import CrmDashboard from "../CrmDashboard";
+import BackendStatus from "../BackendStatus";
+
 export default function LeadsPage() {
+  const router = useRouter();
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    const token = sessionStorage.getItem("accessToken");
+
+    if (!token) {
+      router.replace("/");
+      return;
+    }
+
+    setAccessToken(token);
+    setCheckingSession(false);
+  }, [router]);
+
+  function handleLogout() {
+    sessionStorage.removeItem("accessToken");
+    setAccessToken(null);
+    router.replace("/");
+  }
+
+  if (checkingSession || !accessToken) {
+    return null;
+  }
+
   return (
-    <main className="min-h-screen bg-slate-50 p-8">
-      <h1 className="text-3xl font-bold text-slate-900">Leads</h1>
-      <p className="mt-2 text-slate-600">
-        The Leads route is working.
-      </p>
-    </main>
+    <>
+      <CrmDashboard
+        accessToken={accessToken}
+        onLogout={handleLogout}
+        initialSection="Leads"
+      />
+
+      <div className="fixed bottom-4 right-4 z-50">
+        <BackendStatus />
+      </div>
+    </>
   );
 }
